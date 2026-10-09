@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Container Health Monitor</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; }
+    body { margin: 0; background: #0b1020; color: #e7eaf3; }
+    main { max-width: 1050px; margin: 0 auto; padding: 36px 20px; }
+    h1 { margin-bottom: 4px; }
+    .subtitle { color: #99a3bd; margin-top: 0; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 14px; margin: 28px 0; }
+    .card, table { background: #141b2d; border: 1px solid #27304a; border-radius: 12px; }
+    .card { padding: 18px; }
+    .label { color: #99a3bd; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; }
+    .value { font-size: 1.3rem; margin-top: 8px; }
+    .ok { color: #5ce1a0; } .bad { color: #ff7373; } .muted { color: #99a3bd; }
+    table { width: 100%; border-collapse: collapse; overflow: hidden; }
+    th, td { text-align: left; padding: 12px; border-bottom: 1px solid #27304a; }
+    th { color: #99a3bd; font-size: .75rem; text-transform: uppercase; }
+    td { font-size: .9rem; }
+    code { color: #b5c7ff; }
+    .empty { padding: 28px; text-align: center; color: #99a3bd; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Container Health Monitor</h1>
+  <p class="subtitle">Real-time Docker events and Discord notifications</p>
+  <section class="cards">
+    <div class="card"><div class="label">Service</div><div class="value" id="service">Checking…</div></div>
+    <div class="card"><div class="label">Docker Engine</div><div class="value" id="docker">Checking…</div></div>
+    <div class="card"><div class="label">Discord</div><div class="value" id="discord">Checking…</div></div>
+    <div class="card"><div class="label">Stored Events</div><div class="value" id="count">0</div></div>
+  </section>
+  <h2>Recent events</h2>
+  <table>
+    <thead><tr><th>Time (UTC)</th><th>Container</th><th>Event</th><th>Status</th><th>Discord</th></tr></thead>
+    <tbody id="events"><tr><td colspan="5" class="empty">Waiting for events…</td></tr></tbody>
+  </table>
+</main>
+<script>
+  const setState = (id, yes, good='Connected', bad='Unavailable') => {
+    const node = document.getElementById(id);
+    node.textContent = yes ? good : bad;
+    node.className = `value ${yes ? 'ok' : 'bad'}`;
+  };
+  async function refresh() {
+    try {
+      const [healthResponse, eventsResponse] = await Promise.all([fetch('/health'), fetch('/api/events?limit=50')]);
+      const health = await healthResponse.json();
+      const events = await eventsResponse.json();
+      setState('service', health.service === 'ok', 'Online', 'Offline');
+      setState('docker', health.docker_connected);
+      setState('discord', health.discord_configured, 'Configured', 'Not configured');
+      document.getElementById('count').textContent = events.length;
+      document.getElementById('events').innerHTML = events.length ? events.map(event => `
+        <tr><td>${new Date(event.occurred_at).toLocaleString()}</td><td><code>${escapeHtml(event.container_name)}</code></td>
+        <td>${escapeHtml(event.event_type)}</td><td>${escapeHtml(event.status)}</td>
+        <td class="${event.notification_sent ? 'ok' : 'muted'}">${event.notification_sent ? 'Sent' : 'Stored only'}</td></tr>`).join('')
+        : '<tr><td colspan="5" class="empty">Waiting for events…</td></tr>';
+    } catch (_) { setState('service', false, 'Online', 'Offline'); }
+  }
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+  }
+  refresh(); setInterval(refresh, 5000);
+</script>
+</body>
+</html>
+

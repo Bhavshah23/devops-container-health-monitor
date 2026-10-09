@@ -1,0 +1,53 @@
+services:
+  monitor:
+    build: .
+    container_name: devops-health-monitor
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-5001}:5000"
+    environment:
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-change-this-lab-secret}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-10}
+      ALERT_COOLDOWN_SECONDS: ${ALERT_COOLDOWN_SECONDS:-60}
+      MONITOR_LABEL: ${MONITOR_LABEL:-health-monitor.enabled}
+      START_MONITOR: ${START_MONITOR:-true}
+      DB_PATH: /data/events.db
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - monitor-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  healthy-demo:
+    image: nginx:1.27-alpine
+    container_name: healthy-demo
+    restart: unless-stopped
+    labels:
+      health-monitor.enabled: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  unhealthy-demo:
+    image: alpine:3.21
+    container_name: unhealthy-demo
+    restart: unless-stopped
+    command: ["sh", "-c", "while true; do sleep 30; done"]
+    labels:
+      health-monitor.enabled: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "exit 1"]
+      interval: 10s
+      timeout: 2s
+      retries: 2
+      start_period: 5s
+
+volumes:
+  monitor-data:
